@@ -8,6 +8,7 @@
 plugins {
     // Apply the application plugin to add support for building a CLI application in Java.
     application
+	id("com.gradleup.shadow") version "9.3.0"
 }
 
 repositories {
@@ -23,6 +24,8 @@ dependencies {
 
     // This dependency is used by the application.
     implementation(libs.guava)
+    implementation("org.xerial:sqlite-jdbc:3.44.0.0")
+    implementation("org.slf4j:slf4j-api:1.7.36")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
