@@ -134,7 +134,8 @@ public class UserManager {
                 String passwordHashFromDB = rs.getString("passwordHash");
                 String salt = rs.getString("salt");
 
-                // Compare the password hash to their supplied password
+                // Compare the password hash to their supplied password, which solves CWE-328: Use of Weak Hash.
+                // This is because it compares the two strong keys instead of a weak hash like SHA-1
                 String passwordHashFromArgs = new String(Encryption.generateKeyBytes(password, salt));
 
                 if(!passwordHashFromArgs.equals(passwordHashFromDB))

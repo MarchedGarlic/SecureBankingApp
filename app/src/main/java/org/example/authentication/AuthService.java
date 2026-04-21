@@ -34,8 +34,10 @@ public class AuthService {
      */
     public static AuthKey generateKey() throws AuthenticationError {
         // Generate random token by creating a list of random bytes and encoding it as a hex string
+        // This solves  CWE-331: Insufficient Entropy vulnerability by using a secure random generator
+        // guaranteeing this wont create clusters
         SecureRandom secureRandom = new SecureRandom();
-        byte[] bytes = new byte[32];
+        byte[] bytes = new byte[32]; // CWE-334: Small Space of Random Values is solved here by using 32 bytes, which gives us 256 bits of entropy, making it infeasible to brute force the token
         secureRandom.nextBytes(bytes);
         String token = HexFormat.of().formatHex(bytes);
 
@@ -64,7 +66,8 @@ public class AuthService {
      * @throws AuthenticationError 
      */
     public static boolean validateKey(AuthKey key) throws AuthenticationError {
-        // Token is invalid if it has expired
+        // This helps solve  CWE-324: Use of a Key Past its Expiration Date vulnerability by checking if the key
+        // has expired before validating preventing the use of expired keys
         if(key.isExpired()){
             throw new SecurityException("Key has expired");
         }
@@ -107,7 +110,7 @@ public class AuthService {
     public static void pruneExpiredKeys() throws AuthenticationError {
         // Remove all expired tokens from the database
         initTables();
-        
+
         try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement stat = conn.prepareStatement("DELETE FROM sessions WHERE expires_at <= ?;")){
             stat.setTimestamp(1, java.sql.Timestamp.from(Instant.now()));
             stat.executeUpdate();

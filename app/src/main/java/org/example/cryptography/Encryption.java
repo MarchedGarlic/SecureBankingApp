@@ -17,6 +17,8 @@ public class Encryption {
      * @throws EncryptionError
      */
     public static byte[] generateKeyBytes(String password, String salt) throws EncryptionError {
+        // This solves the CWE-261: Weak Encoding for Password vulnerability by using
+        // a strong key derivation instead, making it hard to brute force the password hash
         try {
             SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
             PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt.getBytes(), ITERATIONS, KEY_LENGTH);
