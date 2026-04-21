@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Objects;
 import java.util.UUID;
 
-// Actual user saving logic
 public class UserManager {
     private static final String DB_ADAPTER = "jdbc:sqlite:bank.db";
 

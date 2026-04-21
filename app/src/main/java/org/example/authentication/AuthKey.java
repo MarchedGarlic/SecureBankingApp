@@ -3,18 +3,18 @@ package org.example.authentication;
 import java.time.Instant;
 
 public class AuthKey {
-    private final String key;
+    private final String token;
     private final Instant createdAt;
     private final Instant expiresAt;
 
-    public AuthKey(String key, Instant createdAt, Instant expiresAt) {
-        this.key = key;
+    public AuthKey(String token, Instant createdAt, Instant expiresAt) {
+        this.token = token;
         this.createdAt = createdAt;
         this.expiresAt = expiresAt;
     }
 
-    public String getValue() {
-        return key;
+    public String getToken() {
+        return token;
     }
 
     public Instant getCreatedAt() {
