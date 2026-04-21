@@ -8,49 +8,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Objects;
-
-// Test user class example
-class User {
-    private static int nextID = 0;
-
-    private String id;
-    private String username;
-    private String password;
-    private String salt;
-
-    public User(String username, String password) {
-        this.id = "user_" + ++nextID;
-        this.username = username;
-        this.password = password;
-        this.salt = Encryption.generateSalt();
-    }
-
-    User(String id, String username, String password, String salt) {
-        this.id = id;
-        this.username = username;
-        this.password = password;
-        this.salt = salt;
-    }
-
-    public String getId() {
-        return id;
-    }
-
-    public String getUsername() {
-        return username;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public String getSalt() {
-        return salt;
-    }
-}
+import java.util.UUID;
 
 // Actual user saving logic
-public class UserSaver {
+public class UserManager {
     private static final String DB_ADAPTER = "jdbc:sqlite:bank.db";
 
     /**
@@ -69,19 +30,56 @@ public class UserSaver {
     }
 
     /**
+     * This will create a new user and save it to the disk. It will throw an error if the username is already taken
+     * @param username
+     * @param password
+     * @throws EncryptionError
+     */
+    public static User newUser(String username, String password) throws EncryptionError {
+        Objects.requireNonNull(username, "Username cannot be null");
+        Objects.requireNonNull(password, "Password cannot be null");
+
+        // Generate a random salt
+        String salt = Encryption.generateSalt();
+
+        // Generate the password hash
+        String passwordHash = new String(Encryption.generateKeyBytes(password, salt));
+
+        // Create a new user object with a random ID
+        User user = new User(UUID.randomUUID().toString(), username, passwordHash, salt);
+
+        // Save the user to disk
+        return saveUser(user);
+    }
+
+    /**
+     * This will delete a user from the database and all their notes from the disk
+     * @param username
+     * @throws EncryptionError
+     */
+    public static void deleteUser(String username) throws EncryptionError {
+        Objects.requireNonNull(username, "Username cannot be null");
+
+        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE username=?;")){
+            pstmt.setString(1, username);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            throw new EncryptionError("Error deleting user");
+        }
+    }
+
+    /**
      * This will have a single user's data to the table and all their notes to files
      * @param user
      * @throws EncryptionError
      */
-    public static void saveUser(User user) throws EncryptionError {
+    public static User saveUser(User user) throws EncryptionError {
         Objects.requireNonNull(user, "User cannot be null");
 
         try {
             // Make sure the tables actually exist
             initTables();
-
-            // Convert user password to hash
-            String passwordHash = new String(Encryption.generateKeyBytes(user.getPassword(), user.getSalt()));
 
             // Insert the user into the table if they arent already inserted
             String sql = """
@@ -93,7 +91,7 @@ public class UserSaver {
             try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement pstmt = conn.prepareStatement(sql)){
                 pstmt.setString(1, user.getId());
                 pstmt.setString(2, user.getUsername());
-                pstmt.setString(3, passwordHash);
+                pstmt.setString(3, user.getPasswordHash());
                 pstmt.setString(4, user.getSalt());
                 pstmt.executeUpdate();
             }
@@ -102,6 +100,8 @@ public class UserSaver {
             e.printStackTrace();
             throw new EncryptionError("Error saving user");
         }
+
+        return user;
     }
 
     /**
@@ -184,16 +184,25 @@ public class UserSaver {
     }
 
     public static void main(String[] args) throws EncryptionError {
-        User user1 = new User("Test", "Password");
-        User user2 = new User("John", "abc123");
-        User user3 = new User("Doe", "hello");
+        User user1 = UserManager.newUser("Test", "Password");
+        User user2 = UserManager.newUser("John", "abc123");
+        User user3 = UserManager.newUser("Doe", "hello");
 
         saveUser(user1);
         saveUser(user2);
         saveUser(user3);
 
         System.out.println(getAllUsernames());
-        System.out.println(loadUser("John", "abc123"));
-        System.out.println(loadUser("John", "abc1223"));
+
+        try {
+            System.out.println(loadUser("John", "abc123"));
+            System.out.println(loadUser("John", "abc1223"));
+        } catch (EncryptionError e) {
+            System.out.println(e.getMessage());
+        }
+
+        deleteUser("Test");
+        deleteUser("John");
+        deleteUser("Doe");
     }
 }
