@@ -1,77 +1,159 @@
 package org.example;
 
-import java.math.BigDecimal;
-import java.util.List;
-
-import org.example.authentication.AuthKey;
-import org.example.authentication.AuthService;
-import org.example.banking.AccountManager;
-import org.example.banking.BankAccount;
-import org.example.banking.Transaction;
-import org.example.cryptography.User;
+import org.example.authentication.AuthenticationError;
+import org.example.authentication.LoginService;
+import org.example.authentication.LoginService.SessionLength;
+import org.example.authentication.Session;
+import org.example.cryptography.EncryptionError;
 import org.example.cryptography.UserManager;
 
+import java.util.Scanner;
+
+/**
+ * Entry point for the Secure Banking App.
+ *
+ * On startup the console shows a main menu:
+ *   [1] Create account
+ *   [2] Login
+ *   [3] Exit
+ *
+ * After a successful login a second menu is shown with placeholder options
+ * that can be implemented in future sprints.
+ */
 public class App {
-    public static void main(String[] args) throws Exception {
-        // --- User registration ---
-        System.out.println("=== Registering users ===");
-        User alice = UserManager.newUser("alice", "s3cur3P@ss!");
-        User bob   = UserManager.newUser("bob",   "hunter2!");
-        System.out.println("Registered: " + alice.getUsername() + ", " + bob.getUsername());
 
-        // --- Authentication ---
-        System.out.println("\n=== Authentication ===");
-        User aliceLogin = UserManager.loadUser("alice", "s3cur3P@ss!");
-        AuthKey aliceKey = AuthService.generateKey();
-        System.out.println("Alice logged in. Token valid: " + AuthService.validateKey(aliceKey));
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        boolean running = true;
 
-        // --- Open accounts ---
-        System.out.println("\n=== Opening accounts ===");
-        BankAccount aliceChecking = AccountManager.openAccount(aliceLogin.getId(), BankAccount.AccountType.CHECKING);
-        BankAccount aliceSavings  = AccountManager.openAccount(aliceLogin.getId(), BankAccount.AccountType.SAVINGS);
-        BankAccount bobChecking   = AccountManager.openAccount(bob.getId(), BankAccount.AccountType.CHECKING);
-        System.out.println("Alice: " + aliceChecking);
-        System.out.println("Alice: " + aliceSavings);
-        System.out.println("Bob:   " + bobChecking);
+        printBanner();
 
-        // --- Deposit ---
-        System.out.println("\n=== Deposits ===");
-        AccountManager.deposit(aliceChecking.getId(), new BigDecimal("1000.00"));
-        AccountManager.deposit(bobChecking.getId(),   new BigDecimal("500.00"));
-        System.out.println("Alice checking after deposit: " + AccountManager.getAccount(aliceChecking.getId()));
-        System.out.println("Bob checking after deposit:   " + AccountManager.getAccount(bobChecking.getId()));
+        while (running) {
+            printMainMenu();
+            String choice = scanner.nextLine().trim();
 
-        // --- Withdraw ---
-        System.out.println("\n=== Withdrawal ===");
-        AccountManager.withdraw(aliceChecking.getId(), new BigDecimal("200.00"));
-        System.out.println("Alice checking after withdrawal: " + AccountManager.getAccount(aliceChecking.getId()));
-
-        // --- Transfer ---
-        System.out.println("\n=== Transfer ===");
-        AccountManager.transfer(aliceChecking.getId(), bobChecking.getId(), new BigDecimal("150.00"));
-        System.out.println("Alice checking after transfer: " + AccountManager.getAccount(aliceChecking.getId()));
-        System.out.println("Bob checking after transfer:   " + AccountManager.getAccount(bobChecking.getId()));
-
-        // --- Transaction history ---
-        System.out.println("\n=== Alice's transaction history ===");
-        List<Transaction> history = AccountManager.getTransactionHistory(aliceChecking.getId());
-        history.forEach(System.out::println);
-
-        // --- Insufficient funds ---
-        System.out.println("\n=== Insufficient funds test ===");
-        try {
-            AccountManager.withdraw(bobChecking.getId(), new BigDecimal("99999.00"));
-        } catch (Exception e) {
-            System.out.println("Caught expected error: " + e.getMessage());
+            switch (choice) {
+                case "1" -> handleCreateAccount(scanner);
+                case "2" -> handleLogin(scanner);
+                case "3" -> {
+                    System.out.println("\nGoodbye.");
+                    running = false;
+                }
+                default  -> System.out.println("  Invalid option. Please enter 1, 2, or 3.\n");
+            }
         }
 
-        // --- Session invalidation ---
-        System.out.println("\n=== Session invalidation ===");
-        AuthService.invalidateKey(aliceKey);
-        System.out.println("Token valid after invalidation: " + AuthService.validateKey(aliceKey));
+        scanner.close();
+    }
 
-        // --- Cleanup ---
-        UserManager.deleteUser("alice");
-        UserManager.deleteUser("bob");
+    private static void printBanner() {
+        System.out.println("╔══════════════════════════════════════╗");
+        System.out.println("║       SECURE BANKING APP             ║");
+        System.out.println("╚══════════════════════════════════════╝");
+        System.out.println();
+    }
+
+    private static void printMainMenu() {
+        System.out.println("──────────────────────────────────────");
+        System.out.println("  Main Menu");
+        System.out.println("──────────────────────────────────────");
+        System.out.println("  [1] Create account");
+        System.out.println("  [2] Login");
+        System.out.println("  [3] Exit");
+        System.out.print("\n  Choose an option: ");
+    }
+
+    private static void printAccountMenu(Session session) {
+        System.out.println("\n──────────────────────────────────────");
+        System.out.println("  Welcome, " + session.getUsername() + "!");
+        System.out.println("  Session expires: " + session.getExpiresAt());
+        System.out.println("──────────────────────────────────────");
+        System.out.println("  [1] View balance          (coming soon)");
+        System.out.println("  [2] Transfer funds        (coming soon)");
+        System.out.println("  [3] Transaction history   (coming soon)");
+        System.out.println("  [4] Account settings      (coming soon)");
+        System.out.println("  [5] Logout");
+        System.out.print("\n  Choose an option: ");
+    }
+
+    private static void handleCreateAccount(Scanner scanner) {
+        System.out.println("\n── Create Account ─────────────────────");
+
+        System.out.print("  Username: ");
+        String username = scanner.nextLine().trim();
+
+        System.out.print("  Password: ");
+        String password = scanner.nextLine().trim();
+
+        System.out.print("  Confirm password: ");
+        String confirm = scanner.nextLine().trim();
+
+        if (!password.equals(confirm)) {
+            System.out.println("  Error: passwords do not match.\n");
+            return;
+        }
+
+        if (username.isEmpty() || password.isEmpty()) {
+            System.out.println("  Error: username and password cannot be empty.\n");
+            return;
+        }
+
+        try {
+            UserManager.newUser(username, password);
+            System.out.println("  Account created successfully! You can now log in.\n");
+        } catch (EncryptionError e) {
+            System.out.println("  Error creating account: " + e.getMessage() + "\n");
+        }
+    }
+
+    private static void handleLogin(Scanner scanner) {
+        System.out.println("\n── Login ───────────────────────────────");
+
+        System.out.print("  Username: ");
+        String username = scanner.nextLine().trim();
+
+        System.out.print("  Password: ");
+        String password = scanner.nextLine().trim();
+
+        try {
+            Session session = LoginService.login(username, password, SessionLength.STANDARD);
+            System.out.println("  Login successful!\n");
+            handleAccountMenu(scanner, session);
+        } catch (AuthenticationError e) {
+            System.out.println("  Login failed: " + e.getMessage() + "\n");
+        }
+    }
+
+    private static void handleAccountMenu(Scanner scanner, Session session) {
+        boolean loggedIn = true;
+
+        while (loggedIn) {
+            try {
+                session = LoginService.validateAndRefresh(session.getToken(), SessionLength.STANDARD);
+            } catch (AuthenticationError e) {
+                System.out.println("\n  Session expired. Please log in again.\n");
+                return;
+            }
+
+            printAccountMenu(session);
+            String choice = scanner.nextLine().trim();
+
+            switch (choice) {
+                case "1" -> System.out.println("\n  View balance — coming soon.\n");
+                case "2" -> System.out.println("\n  Transfer funds — coming soon.\n");
+                case "3" -> System.out.println("\n  Transaction history — coming soon.\n");
+                case "4" -> System.out.println("\n  Account settings — coming soon.\n");
+                case "5" -> {
+                    try {
+                        LoginService.logout(session.getToken());
+                    } catch (AuthenticationError e) {
+                        System.out.println("  Warning: logout encountered an error: " + e.getMessage());
+                    }
+                    System.out.println("\n  Logged out successfully.\n");
+                    loggedIn = false;
+                }
+                default -> System.out.println("  Invalid option. Please enter 1–5.\n");
+            }
+        }
     }
 }
