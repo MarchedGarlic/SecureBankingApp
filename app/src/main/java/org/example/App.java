@@ -46,10 +46,6 @@ public class App {
         scanner.close();
     }
 
-    // -------------------------------------------------------------------------
-    // Menu rendering
-    // -------------------------------------------------------------------------
-
     private static void printBanner() {
         System.out.println("╔══════════════════════════════════════╗");
         System.out.println("║       SECURE BANKING APP             ║");
@@ -80,10 +76,6 @@ public class App {
         System.out.print("\n  Choose an option: ");
     }
 
-    // -------------------------------------------------------------------------
-    // Create account flow
-    // -------------------------------------------------------------------------
-
     private static void handleCreateAccount(Scanner scanner) {
         System.out.println("\n── Create Account ─────────────────────");
 
@@ -107,17 +99,12 @@ public class App {
         }
 
         try {
-            // Accounts are persisted to bank.db via UserManager (SQLite)
             UserManager.newUser(username, password);
             System.out.println("  Account created successfully! You can now log in.\n");
         } catch (EncryptionError e) {
             System.out.println("  Error creating account: " + e.getMessage() + "\n");
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Login flow
-    // -------------------------------------------------------------------------
 
     private static void handleLogin(Scanner scanner) {
         System.out.println("\n── Login ───────────────────────────────");
@@ -137,15 +124,10 @@ public class App {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Post-login account menu
-    // -------------------------------------------------------------------------
-
     private static void handleAccountMenu(Scanner scanner, Session session) {
         boolean loggedIn = true;
 
         while (loggedIn) {
-            // Validate the session is still active before showing the menu
             try {
                 session = LoginService.validateAndRefresh(session.getToken(), SessionLength.STANDARD);
             } catch (AuthenticationError e) {

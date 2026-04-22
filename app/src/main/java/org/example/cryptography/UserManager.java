@@ -1,7 +1,6 @@
 package org.example.cryptography;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -10,8 +9,12 @@ import java.util.ArrayList;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.example.db.DatabaseManager;
+
 public class UserManager {
-    private static final String DB_ADAPTER = "jdbc:sqlite:bank.db";
+    /**
+     * Uses DatabaseManager so every DB connection applies secure file permissions.
+     */
 
     /**
      * This will create the initial table to hold users
@@ -20,7 +23,7 @@ public class UserManager {
      */
     private static void initTables() throws EncryptionError {
         // Create the users table if it doesn't exist
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); Statement stat = conn.createStatement()){
+        try (Connection conn = DatabaseManager.getConnection(); Statement stat = conn.createStatement()){
             stat.executeUpdate("CREATE TABLE IF NOT EXISTS users (id STRING PRIMARY KEY, username STRING NOT NULL UNIQUE, passwordHash STRING NOT NULL, salt STRING NOT NULL);");
         } catch (SQLException e) {
             e.printStackTrace();
@@ -59,7 +62,7 @@ public class UserManager {
     public static void deleteUser(String username) throws EncryptionError {
         Objects.requireNonNull(username, "Username cannot be null");
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE username=?;")){
+        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE username=?;")){
             pstmt.setString(1, username);
             pstmt.executeUpdate();
         } catch (SQLException e) {
@@ -87,7 +90,7 @@ public class UserManager {
                 ON CONFLICT(id)
                 DO UPDATE SET username=excluded.username, passwordHash=excluded.passwordHash, salt=excluded.salt;
             """;
-            try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement pstmt = conn.prepareStatement(sql)){
+            try (Connection conn = DatabaseManager.getConnection(); PreparedStatement pstmt = conn.prepareStatement(sql)){
                 pstmt.setString(1, user.getId());
                 pstmt.setString(2, user.getUsername());
                 pstmt.setString(3, user.getPasswordHash());
@@ -121,7 +124,7 @@ public class UserManager {
             // Retrieve the user fields
             String sql = "SELECT * FROM users WHERE username=?;";
 
-            try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement pstmt = conn.prepareStatement(sql)){
+            try (Connection conn = DatabaseManager.getConnection(); PreparedStatement pstmt = conn.prepareStatement(sql)){
                 pstmt.setString(1, username);
 
                 ResultSet rs = pstmt.executeQuery();
@@ -141,8 +144,8 @@ public class UserManager {
                 if(!passwordHashFromArgs.equals(passwordHashFromDB))
                     throw new EncryptionError("Invalid password");
 
-                // Create the actual user
-                User user = new User(userID, username, password, salt);
+                // Create the actual user — store the hash, never the plaintext password
+                User user = new User(userID, username, passwordHashFromDB, salt);
 
                 // Return the resulting construction
                 return user;
@@ -167,7 +170,7 @@ public class UserManager {
             initTables();
             
             // Query for all the users
-            try (Connection conn = DriverManager.getConnection(DB_ADAPTER); Statement stat = conn.createStatement()){
+            try (Connection conn = DatabaseManager.getConnection(); Statement stat = conn.createStatement()){
                 ResultSet rs = stat.executeQuery("SELECT username FROM users");
     
                 // Load each user
