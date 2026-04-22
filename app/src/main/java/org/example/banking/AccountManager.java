@@ -2,22 +2,26 @@ package org.example.banking;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+import org.example.db.DatabaseManager;
+
 public class AccountManager {
-    private static final String DB_ADAPTER = "jdbc:sqlite:bank.db";
+    /**
+     * Uses DatabaseManager so every DB connection applies secure file permissions.
+     */
 
     private static void initTables() throws BankingError {
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER);
+        try (Connection conn = DatabaseManager.getConnection();
              Statement stat = conn.createStatement()) {
             stat.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS accounts (
@@ -59,7 +63,7 @@ public class AccountManager {
                 BigDecimal.ZERO
         );
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER);
+        try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(
                      "INSERT INTO accounts (id, owner_id, account_type, balance) VALUES (?, ?, ?, ?);")) {
             pstmt.setString(1, account.getId());
@@ -83,14 +87,14 @@ public class AccountManager {
 
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER);
+        try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(
                      "SELECT * FROM accounts WHERE id=?;")) {
             pstmt.setString(1, accountId);
             ResultSet rs = pstmt.executeQuery();
             if (!rs.next()) throw new BankingError("Account not found");
             return rowToAccount(rs);
-        } catch (SQLException e) {
+        } catch (SQLException | BankingError e) {
             e.printStackTrace();
             throw new BankingError("Error retrieving account");
         }
@@ -105,13 +109,13 @@ public class AccountManager {
         initTables();
 
         List<BankAccount> accounts = new ArrayList<>();
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER);
+        try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(
                      "SELECT * FROM accounts WHERE owner_id=?;")) {
             pstmt.setString(1, ownerId);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) accounts.add(rowToAccount(rs));
-        } catch (SQLException e) {
+        } catch (SQLException | BankingError e) {
             e.printStackTrace();
             throw new BankingError("Error retrieving accounts");
         }
@@ -125,19 +129,32 @@ public class AccountManager {
     public static void closeAccount(String accountId) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
 
-        BankAccount account = getAccount(accountId);
-        if (account.getBalance().compareTo(BigDecimal.ZERO) != 0) {
-            throw new BankingError("Cannot close account with non-zero balance");
-        }
-
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER);
-             PreparedStatement pstmt = conn.prepareStatement(
-                     "DELETE FROM accounts WHERE id=?;")) {
-            pstmt.setString(1, accountId);
-            pstmt.executeUpdate();
+        BigDecimal currentBalance;
+        try (Connection conn = DatabaseManager.getConnection()) {
+            currentBalance = getBalanceForUpdate(conn, accountId);
         } catch (SQLException e) {
             e.printStackTrace();
             throw new BankingError("Error closing account");
+        }
+
+        if (currentBalance.compareTo(BigDecimal.ZERO) != 0) {
+            throw new BankingError("Cannot close account with non-zero balance");
+        }
+
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(
+                     "DELETE FROM accounts WHERE id=? AND balance=?;")) {
+            pstmt.setString(1, accountId);
+            pstmt.setString(2, currentBalance.toPlainString());
+            int affectedRows = pstmt.executeUpdate();
+            if (affectedRows == 0) {
+                throw new BankingError("Account state changed concurrently; close aborted");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            throw new BankingError("Error closing account");
+        } catch (BankingError e) {
+            throw e;
         }
     }
 
@@ -151,11 +168,15 @@ public class AccountManager {
 
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER)) {
+        try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                BigDecimal newBalance = getBalanceForUpdate(conn, accountId).add(amount);
-                updateBalance(conn, accountId, newBalance);
+                BigDecimal currentBalance = getBalanceForUpdate(conn, accountId);
+                BigDecimal newBalance = currentBalance.add(amount);
+                int affectedRows = updateBalanceIfUnchanged(conn, accountId, currentBalance, newBalance);
+                if (affectedRows == 0) {
+                    throw new BankingError("Account state changed concurrently; deposit aborted");
+                }
                 Transaction tx = recordTransaction(conn, null, accountId, amount, Transaction.TransactionType.DEPOSIT);
                 conn.commit();
                 return tx;
@@ -179,13 +200,16 @@ public class AccountManager {
 
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER)) {
+        try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);
             try {
                 BigDecimal currentBalance = getBalanceForUpdate(conn, accountId);
                 if (currentBalance.compareTo(amount) < 0) throw new BankingError("Insufficient funds");
                 BigDecimal newBalance = currentBalance.subtract(amount);
-                updateBalance(conn, accountId, newBalance);
+                int affectedRows = updateBalanceIfUnchanged(conn, accountId, currentBalance, newBalance);
+                if (affectedRows == 0) {
+                    throw new BankingError("Account state changed concurrently; withdrawal aborted");
+                }
                 Transaction tx = recordTransaction(conn, accountId, null, amount, Transaction.TransactionType.WITHDRAWAL);
                 conn.commit();
                 return tx;
@@ -211,14 +235,25 @@ public class AccountManager {
 
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER)) {
+        try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);
             try {
                 BigDecimal fromBalance = getBalanceForUpdate(conn, fromAccountId);
                 if (fromBalance.compareTo(amount) < 0) throw new BankingError("Insufficient funds");
                 BigDecimal toBalance = getBalanceForUpdate(conn, toAccountId);
-                updateBalance(conn, fromAccountId, fromBalance.subtract(amount));
-                updateBalance(conn, toAccountId, toBalance.add(amount));
+                BigDecimal fromNewBalance = fromBalance.subtract(amount);
+                BigDecimal toNewBalance = toBalance.add(amount);
+
+                int fromRows = updateBalanceIfUnchanged(conn, fromAccountId, fromBalance, fromNewBalance);
+                if (fromRows == 0) {
+                    throw new BankingError("Source account state changed concurrently; transfer aborted");
+                }
+
+                int toRows = updateBalanceIfUnchanged(conn, toAccountId, toBalance, toNewBalance);
+                if (toRows == 0) {
+                    throw new BankingError("Destination account state changed concurrently; transfer aborted");
+                }
+
                 Transaction tx = recordTransaction(conn, fromAccountId, toAccountId, amount, Transaction.TransactionType.TRANSFER);
                 conn.commit();
                 return tx;
@@ -241,14 +276,14 @@ public class AccountManager {
         initTables();
 
         List<Transaction> transactions = new ArrayList<>();
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER);
+        try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(
                      "SELECT * FROM transactions WHERE from_account_id=? OR to_account_id=? ORDER BY created_at DESC;")) {
             pstmt.setString(1, accountId);
             pstmt.setString(2, accountId);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) transactions.add(rowToTransaction(rs));
-        } catch (SQLException e) {
+        } catch (SQLException | BankingError e) {
             e.printStackTrace();
             throw new BankingError("Error retrieving transaction history");
         }
@@ -264,16 +299,19 @@ public class AccountManager {
             pstmt.setString(1, accountId);
             ResultSet rs = pstmt.executeQuery();
             if (!rs.next()) throw new BankingError("Account not found: " + accountId);
-            return new BigDecimal(rs.getString("balance"));
+            return parseAmount(rs.getString("balance"), "accounts.balance", accountId);
         }
     }
 
-    private static void updateBalance(Connection conn, String accountId, BigDecimal newBalance) throws SQLException {
+    private static int updateBalanceIfUnchanged(Connection conn, String accountId,
+                                                BigDecimal expectedCurrentBalance,
+                                                BigDecimal newBalance) throws SQLException {
         try (PreparedStatement pstmt = conn.prepareStatement(
-                "UPDATE accounts SET balance=? WHERE id=?;")) {
+                "UPDATE accounts SET balance=? WHERE id=? AND balance=?;")) {
             pstmt.setString(1, newBalance.toPlainString());
             pstmt.setString(2, accountId);
-            pstmt.executeUpdate();
+            pstmt.setString(3, expectedCurrentBalance.toPlainString());
+            return pstmt.executeUpdate();
         }
     }
 
@@ -294,24 +332,81 @@ public class AccountManager {
         return new Transaction(id, fromAccountId, toAccountId, amount, type, now);
     }
 
-    private static BankAccount rowToAccount(ResultSet rs) throws SQLException {
+    private static BankAccount rowToAccount(ResultSet rs) throws SQLException, BankingError {
         return new BankAccount(
                 rs.getString("id"),
                 rs.getString("owner_id"),
-                BankAccount.AccountType.valueOf(rs.getString("account_type")),
-                new BigDecimal(rs.getString("balance"))
+                parseAccountType(rs.getString("account_type"), rs.getString("id")),
+                parseAmount(rs.getString("balance"), "accounts.balance", rs.getString("id"))
         );
     }
 
-    private static Transaction rowToTransaction(ResultSet rs) throws SQLException {
+    private static Transaction rowToTransaction(ResultSet rs) throws SQLException, BankingError {
         return new Transaction(
                 rs.getString("id"),
                 rs.getString("from_account_id"),
                 rs.getString("to_account_id"),
-                new BigDecimal(rs.getString("amount")),
-                Transaction.TransactionType.valueOf(rs.getString("type")),
-                rs.getTimestamp("created_at").toInstant()
+                parseAmount(rs.getString("amount"), "transactions.amount", rs.getString("id")),
+                parseTransactionType(rs.getString("type"), rs.getString("id")),
+                parseCreatedAt(rs, rs.getString("id"))
         );
+    }
+
+    /**
+     * Parses account type safely from DB text.
+     */
+    private static BankAccount.AccountType parseAccountType(String rawType, String accountId) throws BankingError {
+        if (rawType == null || rawType.isBlank()) {
+            throw new BankingError("Invalid account type for account: " + accountId);
+        }
+        try {
+            return BankAccount.AccountType.valueOf(rawType);
+        } catch (IllegalArgumentException e) {
+            throw new BankingError("Unsupported account type '" + rawType + "' for account: " + accountId);
+        }
+    }
+
+    /**
+     * Parses transaction type safely from DB text.
+     */
+    private static Transaction.TransactionType parseTransactionType(String rawType, String transactionId) throws BankingError {
+        if (rawType == null || rawType.isBlank()) {
+            throw new BankingError("Invalid transaction type for transaction: " + transactionId);
+        }
+        try {
+            return Transaction.TransactionType.valueOf(rawType);
+        } catch (IllegalArgumentException e) {
+            throw new BankingError("Unsupported transaction type '" + rawType + "' for transaction: " + transactionId);
+        }
+    }
+
+    /**
+     * Parses money amount safely from DB text.
+     */
+    private static BigDecimal parseAmount(String rawAmount, String fieldName, String recordId) throws BankingError {
+        if (rawAmount == null || rawAmount.isBlank()) {
+            throw new BankingError("Invalid numeric value in " + fieldName + " for record: " + recordId);
+        }
+        try {
+            return new BigDecimal(rawAmount);
+        } catch (NumberFormatException e) {
+            throw new BankingError("Malformed numeric value '" + rawAmount + "' in " + fieldName + " for record: " + recordId);
+        }
+    }
+
+    /**
+     * Parses created_at safely from DB timestamp.
+     */
+    private static Instant parseCreatedAt(ResultSet rs, String transactionId) throws SQLException, BankingError {
+        java.sql.Timestamp timestamp = rs.getTimestamp("created_at");
+        if (timestamp == null) {
+            throw new BankingError("Missing created_at timestamp for transaction: " + transactionId);
+        }
+        try {
+            return timestamp.toInstant();
+        } catch (DateTimeException e) {
+            throw new BankingError("Invalid created_at timestamp for transaction: " + transactionId);
+        }
     }
 
     private AccountManager() {}

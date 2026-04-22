@@ -2,7 +2,6 @@ package org.example.authentication;
 
 import java.security.SecureRandom;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -10,8 +9,12 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 
+import org.example.db.DatabaseManager;
+
 public class AuthService {
-    private static final String DB_ADAPTER = "jdbc:sqlite:bank.db";
+    /**
+     * Uses DatabaseManager so every DB connection applies secure file permissions.
+     */
 
     /**
      * This will create the initial table to hold sessions
@@ -20,7 +23,7 @@ public class AuthService {
      */
     private static void initTables() throws AuthenticationError {
         // Create the sessions table if it doesn't exist
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); Statement stat = conn.createStatement()){
+        try (Connection conn = DatabaseManager.getConnection(); Statement stat = conn.createStatement()){
             stat.executeUpdate("CREATE TABLE IF NOT EXISTS sessions (token STRING PRIMARY KEY, created_at DATETIME, expires_at DATETIME);");
         } catch (SQLException e) {
             e.printStackTrace();
@@ -47,7 +50,7 @@ public class AuthService {
         // Insert the token into the database
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement stat = conn.prepareStatement("INSERT INTO sessions (token, created_at, expires_at) VALUES (?, ?, ?);")){
+        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement stat = conn.prepareStatement("INSERT INTO sessions (token, created_at, expires_at) VALUES (?, ?, ?);")){
             stat.setString(1, token);
             stat.setTimestamp(2, java.sql.Timestamp.from(now));
             stat.setTimestamp(3, java.sql.Timestamp.from(expiry));
@@ -75,7 +78,7 @@ public class AuthService {
         // Check if the token exists in the database and check if its expired time is in the future
         initTables();
         
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement stat = conn.prepareStatement("SELECT * FROM sessions WHERE token=? AND expires_at > ?;")){
+        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement stat = conn.prepareStatement("SELECT * FROM sessions WHERE token=? AND expires_at > ?;")){
             stat.setString(1, key.getToken());
             stat.setTimestamp(2, java.sql.Timestamp.from(Instant.now()));
             return stat.executeQuery().next();
@@ -94,7 +97,7 @@ public class AuthService {
         // Remove the token from the database
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement stat = conn.prepareStatement("DELETE FROM sessions WHERE token=?;")){
+        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement stat = conn.prepareStatement("DELETE FROM sessions WHERE token=?;")){
             stat.setString(1, key.getToken());
             stat.executeUpdate();
         } catch (SQLException e) {
@@ -111,7 +114,7 @@ public class AuthService {
         // Remove all expired tokens from the database
         initTables();
 
-        try (Connection conn = DriverManager.getConnection(DB_ADAPTER); PreparedStatement stat = conn.prepareStatement("DELETE FROM sessions WHERE expires_at <= ?;")){
+        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement stat = conn.prepareStatement("DELETE FROM sessions WHERE expires_at <= ?;")){
             stat.setTimestamp(1, java.sql.Timestamp.from(Instant.now()));
             stat.executeUpdate();
         } catch (SQLException e) {

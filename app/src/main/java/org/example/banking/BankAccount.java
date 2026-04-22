@@ -22,7 +22,18 @@ public class BankAccount {
     public AccountType getAccountType() { return accountType; }
     public BigDecimal getBalance() { return balance; }
 
-    void setBalance(BigDecimal balance) { this.balance = balance; }
+    /**
+     * Updates balance only when the value is valid.
+     */
+    void setBalance(BigDecimal balance) {
+        if (balance == null) {
+            throw new IllegalArgumentException("Balance cannot be null");
+        }
+        if (balance.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Balance cannot be negative: " + balance.toPlainString());
+        }
+        this.balance = balance;
+    }
 
     @Override
     public String toString() {
