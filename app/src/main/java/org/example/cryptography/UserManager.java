@@ -141,8 +141,8 @@ public class UserManager {
                 if(!passwordHashFromArgs.equals(passwordHashFromDB))
                     throw new EncryptionError("Invalid password");
 
-                // Create the actual user
-                User user = new User(userID, username, password, salt);
+                // Create the actual user — store the hash, never the plaintext password
+                User user = new User(userID, username, passwordHashFromDB, salt);
 
                 // Return the resulting construction
                 return user;
