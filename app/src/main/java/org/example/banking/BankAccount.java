@@ -3,7 +3,7 @@ package org.example.banking;
 import java.math.BigDecimal;
 import java.util.Objects;
 
-public class BankAccount {
+public class BankAccount implements Cloneable {
     public enum AccountType { CHECKING, SAVINGS }
 
     private final String id;
@@ -39,5 +39,14 @@ public class BankAccount {
     @Override
     public String toString() {
         return String.format("BankAccount[id=%s, type=%s, balance=%s]", id, accountType, balance.toPlainString());
+    }
+
+    @Override
+    public BankAccount clone() {
+        try {
+            return (BankAccount) super.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new AssertionError(e);
+        }
     }
 }

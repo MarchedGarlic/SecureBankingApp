@@ -56,12 +56,7 @@ public class AccountManager {
 
         initTables();
 
-        BankAccount account = new BankAccount(
-                UUID.randomUUID().toString(),
-                ownerId,
-                accountType,
-                BigDecimal.ZERO
-        );
+        BankAccount account = createAccount(UUID.randomUUID().toString(), ownerId, accountType, BigDecimal.ZERO);
 
         try (Connection conn = DatabaseManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(
@@ -129,13 +124,16 @@ public class AccountManager {
     public static void closeAccount(String accountId) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
 
-        BigDecimal currentBalance;
+        BankAccount currentAccount;
         try (Connection conn = DatabaseManager.getConnection()) {
-            currentBalance = getBalanceForUpdate(conn, accountId);
+            currentAccount = getAccountForUpdate(conn, accountId);
         } catch (SQLException e) {
             e.printStackTrace();
             throw new BankingError("Error closing account");
         }
+
+        BankAccount snapshot = currentAccount.clone();
+        BigDecimal currentBalance = snapshot.getBalance();
 
         if (currentBalance.compareTo(BigDecimal.ZERO) != 0) {
             throw new BankingError("Cannot close account with non-zero balance");
@@ -171,9 +169,11 @@ public class AccountManager {
         try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                BigDecimal currentBalance = getBalanceForUpdate(conn, accountId);
-                BigDecimal newBalance = currentBalance.add(amount);
-                int affectedRows = updateBalanceIfUnchanged(conn, accountId, currentBalance, newBalance);
+                BankAccount currentAccount = getAccountForUpdate(conn, accountId);
+                BankAccount workingCopy = currentAccount.clone();
+                BigDecimal currentBalance = workingCopy.getBalance();
+                workingCopy.setBalance(currentBalance.add(amount));
+                int affectedRows = updateBalanceIfUnchanged(conn, accountId, currentBalance, workingCopy.getBalance());
                 if (affectedRows == 0) {
                     throw new BankingError("Account state changed concurrently; deposit aborted");
                 }
@@ -203,10 +203,12 @@ public class AccountManager {
         try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                BigDecimal currentBalance = getBalanceForUpdate(conn, accountId);
+                BankAccount currentAccount = getAccountForUpdate(conn, accountId);
+                BankAccount workingCopy = currentAccount.clone();
+                BigDecimal currentBalance = workingCopy.getBalance();
                 if (currentBalance.compareTo(amount) < 0) throw new BankingError("Insufficient funds");
-                BigDecimal newBalance = currentBalance.subtract(amount);
-                int affectedRows = updateBalanceIfUnchanged(conn, accountId, currentBalance, newBalance);
+                workingCopy.setBalance(currentBalance.subtract(amount));
+                int affectedRows = updateBalanceIfUnchanged(conn, accountId, currentBalance, workingCopy.getBalance());
                 if (affectedRows == 0) {
                     throw new BankingError("Account state changed concurrently; withdrawal aborted");
                 }
@@ -238,18 +240,23 @@ public class AccountManager {
         try (Connection conn = DatabaseManager.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                BigDecimal fromBalance = getBalanceForUpdate(conn, fromAccountId);
+                BankAccount fromAccount = getAccountForUpdate(conn, fromAccountId);
+                BankAccount fromWorkingCopy = fromAccount.clone();
+                BigDecimal fromBalance = fromWorkingCopy.getBalance();
                 if (fromBalance.compareTo(amount) < 0) throw new BankingError("Insufficient funds");
-                BigDecimal toBalance = getBalanceForUpdate(conn, toAccountId);
-                BigDecimal fromNewBalance = fromBalance.subtract(amount);
-                BigDecimal toNewBalance = toBalance.add(amount);
+                BankAccount toAccount = getAccountForUpdate(conn, toAccountId);
+                BankAccount toWorkingCopy = toAccount.clone();
+                BigDecimal toBalance = toWorkingCopy.getBalance();
 
-                int fromRows = updateBalanceIfUnchanged(conn, fromAccountId, fromBalance, fromNewBalance);
+                fromWorkingCopy.setBalance(fromBalance.subtract(amount));
+                toWorkingCopy.setBalance(toBalance.add(amount));
+
+                int fromRows = updateBalanceIfUnchanged(conn, fromAccountId, fromBalance, fromWorkingCopy.getBalance());
                 if (fromRows == 0) {
                     throw new BankingError("Source account state changed concurrently; transfer aborted");
                 }
 
-                int toRows = updateBalanceIfUnchanged(conn, toAccountId, toBalance, toNewBalance);
+                int toRows = updateBalanceIfUnchanged(conn, toAccountId, toBalance, toWorkingCopy.getBalance());
                 if (toRows == 0) {
                     throw new BankingError("Destination account state changed concurrently; transfer aborted");
                 }
@@ -293,13 +300,13 @@ public class AccountManager {
 
     // --- Private helpers ---
 
-    private static BigDecimal getBalanceForUpdate(Connection conn, String accountId) throws SQLException, BankingError {
+    private static BankAccount getAccountForUpdate(Connection conn, String accountId) throws SQLException, BankingError {
         try (PreparedStatement pstmt = conn.prepareStatement(
-                "SELECT balance FROM accounts WHERE id=?;")) {
+                "SELECT * FROM accounts WHERE id=?;")) {
             pstmt.setString(1, accountId);
             ResultSet rs = pstmt.executeQuery();
             if (!rs.next()) throw new BankingError("Account not found: " + accountId);
-            return parseAmount(rs.getString("balance"), "accounts.balance", accountId);
+            return rowToAccount(rs);
         }
     }
 
@@ -333,12 +340,21 @@ public class AccountManager {
     }
 
     private static BankAccount rowToAccount(ResultSet rs) throws SQLException, BankingError {
-        return new BankAccount(
-                rs.getString("id"),
+        String accountId = rs.getString("id");
+        return createAccount(
+                accountId,
                 rs.getString("owner_id"),
-                parseAccountType(rs.getString("account_type"), rs.getString("id")),
-                parseAmount(rs.getString("balance"), "accounts.balance", rs.getString("id"))
+                parseAccountType(rs.getString("account_type"), accountId),
+                parseAmount(rs.getString("balance"), "accounts.balance", accountId)
         );
+    }
+
+    private static BankAccount createAccount(String id, String ownerId, BankAccount.AccountType accountType,
+                                             BigDecimal balance) throws BankingError {
+        return switch (accountType) {
+            case CHECKING -> new CheckingAccount(id, ownerId, balance);
+            case SAVINGS -> new SavingsAccount(id, ownerId, balance);
+        };
     }
 
     private static Transaction rowToTransaction(ResultSet rs) throws SQLException, BankingError {
