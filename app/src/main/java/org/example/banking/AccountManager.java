@@ -8,8 +8,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -53,6 +55,7 @@ public class AccountManager {
     public static BankAccount openAccount(String ownerId, BankAccount.AccountType accountType) throws BankingError {
         Objects.requireNonNull(ownerId, "Owner ID cannot be null");
         Objects.requireNonNull(accountType, "Account type cannot be null");
+        validateRequiredStringParameter("Owner ID", ownerId);
 
         initTables();
 
@@ -79,6 +82,7 @@ public class AccountManager {
      */
     public static BankAccount getAccount(String accountId) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
+        validateRequiredStringParameter("Account ID", accountId);
 
         initTables();
 
@@ -100,6 +104,7 @@ public class AccountManager {
      */
     public static List<BankAccount> getAccountsForUser(String ownerId) throws BankingError {
         Objects.requireNonNull(ownerId, "Owner ID cannot be null");
+        validateRequiredStringParameter("Owner ID", ownerId);
 
         initTables();
 
@@ -123,6 +128,7 @@ public class AccountManager {
      */
     public static void closeAccount(String accountId) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
+        validateRequiredStringParameter("Account ID", accountId);
 
         BankAccount currentAccount;
         try (Connection conn = DatabaseManager.getConnection()) {
@@ -162,6 +168,7 @@ public class AccountManager {
     public static Transaction deposit(String accountId, BigDecimal amount) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
         Objects.requireNonNull(amount, "Amount cannot be null");
+        validateRequiredStringParameter("Account ID", accountId);
         if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new BankingError("Deposit amount must be positive");
 
         initTables();
@@ -196,6 +203,7 @@ public class AccountManager {
     public static Transaction withdraw(String accountId, BigDecimal amount) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
         Objects.requireNonNull(amount, "Amount cannot be null");
+        validateRequiredStringParameter("Account ID", accountId);
         if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new BankingError("Withdrawal amount must be positive");
 
         initTables();
@@ -232,6 +240,8 @@ public class AccountManager {
         Objects.requireNonNull(fromAccountId, "From account ID cannot be null");
         Objects.requireNonNull(toAccountId, "To account ID cannot be null");
         Objects.requireNonNull(amount, "Amount cannot be null");
+        validateRequiredStringParameter("From account ID", fromAccountId);
+        validateRequiredStringParameter("To account ID", toAccountId);
         if (fromAccountId.equals(toAccountId)) throw new BankingError("Cannot transfer to the same account");
         if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new BankingError("Transfer amount must be positive");
 
@@ -279,6 +289,7 @@ public class AccountManager {
      */
     public static List<Transaction> getTransactionHistory(String accountId) throws BankingError {
         Objects.requireNonNull(accountId, "Account ID cannot be null");
+        validateRequiredStringParameter("Account ID", accountId);
 
         initTables();
 
@@ -301,6 +312,7 @@ public class AccountManager {
     // --- Private helpers ---
 
     private static BankAccount getAccountForUpdate(Connection conn, String accountId) throws SQLException, BankingError {
+        validateRequiredStringParameter("Account ID", accountId);
         try (PreparedStatement pstmt = conn.prepareStatement(
                 "SELECT * FROM accounts WHERE id=?;")) {
             pstmt.setString(1, accountId);
@@ -376,7 +388,8 @@ public class AccountManager {
             throw new BankingError("Invalid account type for account: " + accountId);
         }
         try {
-            return BankAccount.AccountType.valueOf(rawType);
+            // This helps solve CWE-178 by handling account type values regardless of letter case.
+            return BankAccount.AccountType.valueOf(rawType.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new BankingError("Unsupported account type '" + rawType + "' for account: " + accountId);
         }
@@ -390,7 +403,8 @@ public class AccountManager {
             throw new BankingError("Invalid transaction type for transaction: " + transactionId);
         }
         try {
-            return Transaction.TransactionType.valueOf(rawType);
+            // This helps solve CWE-178 by handling transaction type values regardless of letter case.
+            return Transaction.TransactionType.valueOf(rawType.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new BankingError("Unsupported transaction type '" + rawType + "' for transaction: " + transactionId);
         }
@@ -414,14 +428,40 @@ public class AccountManager {
      * Parses created_at safely from DB timestamp.
      */
     private static Instant parseCreatedAt(ResultSet rs, String transactionId) throws SQLException, BankingError {
-        java.sql.Timestamp timestamp = rs.getTimestamp("created_at");
-        if (timestamp == null) {
+        Object rawCreatedAt = rs.getObject("created_at");
+        if (rawCreatedAt == null) {
             throw new BankingError("Missing created_at timestamp for transaction: " + transactionId);
         }
-        try {
-            return timestamp.toInstant();
-        } catch (DateTimeException e) {
-            throw new BankingError("Invalid created_at timestamp for transaction: " + transactionId);
+
+        // This helps solve CWE-241 by handling both timestamp and string input types safely.
+        if (rawCreatedAt instanceof java.sql.Timestamp timestamp) {
+            try {
+                return timestamp.toInstant();
+            } catch (DateTimeException e) {
+                throw new BankingError("Invalid created_at timestamp for transaction: " + transactionId);
+            }
+        }
+
+        if (rawCreatedAt instanceof String createdAtText) {
+            try {
+                return Instant.parse(createdAtText);
+            } catch (DateTimeParseException e) {
+                throw new BankingError("Invalid created_at text timestamp for transaction: " + transactionId);
+            }
+        }
+
+        throw new BankingError("Unexpected created_at data type for transaction " + transactionId + ": "
+                + rawCreatedAt.getClass().getSimpleName());
+    }
+
+    // This helps solve CWE-233/CWE-229 by rejecting missing or undefined parameter values.
+    private static void validateRequiredStringParameter(String parameterName, String value) throws BankingError {
+        if (value == null || value.isBlank()) {
+            throw new BankingError(parameterName + " cannot be empty");
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if ("undefined".equals(normalized) || "null".equals(normalized)) {
+            throw new BankingError(parameterName + " is invalid");
         }
     }
 

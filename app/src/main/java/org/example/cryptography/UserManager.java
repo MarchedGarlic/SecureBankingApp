@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -41,6 +42,11 @@ public class UserManager {
         Objects.requireNonNull(username, "Username cannot be null");
         Objects.requireNonNull(password, "Password cannot be null");
 
+        String normalizedUsername = normalizeUsername(username);
+        if (normalizedUsername.isBlank()) {
+            throw new EncryptionError("Username cannot be empty");
+        }
+
         // Generate a random salt
         String salt = Encryption.generateSalt();
 
@@ -48,7 +54,7 @@ public class UserManager {
         String passwordHash = new String(Encryption.generateKeyBytes(password, salt));
 
         // Create a new user object with a random ID
-        User user = new User(UUID.randomUUID().toString(), username, passwordHash, salt);
+        User user = new User(UUID.randomUUID().toString(), username.trim(), passwordHash, salt);
 
         // Save the user to disk
         return saveUser(user);
@@ -62,8 +68,14 @@ public class UserManager {
     public static void deleteUser(String username) throws EncryptionError {
         Objects.requireNonNull(username, "Username cannot be null");
 
-        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE username=?;")){
-            pstmt.setString(1, username);
+        String normalizedUsername = normalizeUsername(username);
+        if (normalizedUsername.isBlank()) {
+            throw new EncryptionError("Username cannot be empty");
+        }
+
+        // This helps solve CWE-178 by matching usernames case-insensitively on delete.
+        try (Connection conn = DatabaseManager.getConnection(); PreparedStatement pstmt = conn.prepareStatement("DELETE FROM users WHERE lower(username)=?;")){
+            pstmt.setString(1, normalizedUsername);
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -78,6 +90,9 @@ public class UserManager {
      */
     public static User saveUser(User user) throws EncryptionError {
         Objects.requireNonNull(user, "User cannot be null");
+        if (normalizeUsername(user.getUsername()).isBlank()) {
+            throw new EncryptionError("Username cannot be empty");
+        }
 
         try {
             // Make sure the tables actually exist
@@ -117,15 +132,21 @@ public class UserManager {
         Objects.requireNonNull(username, "Username cannot be null");
         Objects.requireNonNull(password, "Password cannot be null");
 
+        String normalizedUsername = normalizeUsername(username);
+        if (normalizedUsername.isBlank()) {
+            throw new EncryptionError("Username cannot be empty");
+        }
+
         try {
             // Make sure tables exist, even if just to query something that doesn't exist
             initTables();
 
             // Retrieve the user fields
-            String sql = "SELECT * FROM users WHERE username=?;";
+            // This helps solve CWE-178 by matching usernames with normalized case.
+            String sql = "SELECT * FROM users WHERE lower(username)=?;";
 
             try (Connection conn = DatabaseManager.getConnection(); PreparedStatement pstmt = conn.prepareStatement(sql)){
-                pstmt.setString(1, username);
+                pstmt.setString(1, normalizedUsername);
 
                 ResultSet rs = pstmt.executeQuery();
 
@@ -134,6 +155,7 @@ public class UserManager {
                     throw new EncryptionError("User not found");
 
                 String userID = rs.getString("id");
+                String canonicalUsername = rs.getString("username");
                 String passwordHashFromDB = rs.getString("passwordHash");
                 String salt = rs.getString("salt");
 
@@ -145,7 +167,7 @@ public class UserManager {
                     throw new EncryptionError("Invalid password");
 
                 // Create the actual user — store the hash, never the plaintext password
-                User user = new User(userID, username, passwordHashFromDB, salt);
+                User user = new User(userID, canonicalUsername, passwordHashFromDB, salt);
 
                 // Return the resulting construction
                 return user;
@@ -184,6 +206,10 @@ public class UserManager {
         }
 
         return usernames;
+    }
+
+    private static String normalizeUsername(String username) {
+        return username.trim().toLowerCase(Locale.ROOT);
     }
 
     public static void main(String[] args) throws EncryptionError {
