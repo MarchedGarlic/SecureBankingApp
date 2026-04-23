@@ -9,6 +9,11 @@ final class StatementWorker implements Runnable {
 
     @Override
     public void run() {
-        service.runWorkerLoop();
+        // CWE-431: ensure worker failures are handled instead of terminating silently.
+        try {
+            service.runWorkerLoop();
+        } catch (RuntimeException e) {
+            System.err.println("Statement worker terminated unexpectedly: " + e.getMessage());
+        }
     }
 }

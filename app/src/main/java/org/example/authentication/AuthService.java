@@ -128,11 +128,16 @@ public class AuthService {
 
     private AuthService() {}
 
-    public static void main(String[] args) throws AuthenticationError {
-        AuthKey key = generateKey();
-        System.out.println("Generated key: " + key.getToken());
-        System.out.println("Is valid: " + validateKey(key));
-        invalidateKey(key);
-        System.out.println("Is valid after invalidation: " + validateKey(key));
+    public static void main(String[] args) {
+        // CWE-431: handle failures locally instead of propagating from entrypoint.
+        try {
+            AuthKey key = generateKey();
+            System.out.println("Generated key: " + key.getToken());
+            System.out.println("Is valid: " + validateKey(key));
+            invalidateKey(key);
+            System.out.println("Is valid after invalidation: " + validateKey(key));
+        } catch (AuthenticationError | SecurityException e) {
+            System.err.println("Authentication flow failed: " + e.getMessage());
+        }
     }
 }

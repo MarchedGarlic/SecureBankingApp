@@ -212,26 +212,31 @@ public class UserManager {
         return username.trim().toLowerCase(Locale.ROOT);
     }
 
-    public static void main(String[] args) throws EncryptionError {
-        User user1 = UserManager.newUser("Test", "Password");
-        User user2 = UserManager.newUser("John", "abc123");
-        User user3 = UserManager.newUser("Doe", "hello");
-
-        saveUser(user1);
-        saveUser(user2);
-        saveUser(user3);
-
-        System.out.println(getAllUsernames());
-
+    public static void main(String[] args) {
+        // CWE-431: ensure this entrypoint has an exception handler.
         try {
-            System.out.println(loadUser("John", "abc123"));
-            System.out.println(loadUser("John", "abc1223"));
-        } catch (EncryptionError e) {
-            System.out.println(e.getMessage());
-        }
+            User user1 = UserManager.newUser("Test", "Password");
+            User user2 = UserManager.newUser("John", "abc123");
+            User user3 = UserManager.newUser("Doe", "hello");
 
-        deleteUser("Test");
-        deleteUser("John");
-        deleteUser("Doe");
+            saveUser(user1);
+            saveUser(user2);
+            saveUser(user3);
+
+            System.out.println(getAllUsernames());
+
+            try {
+                System.out.println(loadUser("John", "abc123"));
+                System.out.println(loadUser("John", "abc1223"));
+            } catch (EncryptionError e) {
+                System.out.println(e.getMessage());
+            }
+
+            deleteUser("Test");
+            deleteUser("John");
+            deleteUser("Doe");
+        } catch (EncryptionError e) {
+            System.err.println("UserManager demo flow failed: " + e.getMessage());
+        }
     }
 }

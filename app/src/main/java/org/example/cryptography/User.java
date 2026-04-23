@@ -23,7 +23,8 @@ public class User {
         return username;
     }
 
-    public String getPasswordHash() {
+    // CWE-767: keep password hash inaccessible to untrusted public callers.
+    String getPasswordHash() {
         return passwordHash;
     }
 

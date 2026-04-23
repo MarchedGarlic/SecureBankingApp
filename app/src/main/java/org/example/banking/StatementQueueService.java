@@ -119,7 +119,8 @@ public final class StatementQueueService {
         }
 
         userJobs.sort((a, b) -> b.getRequestedAt().compareTo(a.getRequestedAt()));
-        return userJobs;
+        // CWE-375: return an immutable snapshot, not a mutable list reference.
+        return List.copyOf(userJobs);
     }
 
     public boolean cancelJob(String jobId, String userId) {
@@ -215,8 +216,10 @@ public final class StatementQueueService {
         }
 
         List<Transaction> transactions = AccountManager.getTransactionHistory(job.getAccountId());
+        // CWE-374: pass an immutable snapshot to downstream formatter code.
+        List<Transaction> transactionsSnapshot = List.copyOf(transactions);
         Instant generatedAt = Instant.now();
-        String statement = StatementFormatter.format(account, transactions, generatedAt);
+        String statement = StatementFormatter.format(account, transactionsSnapshot, generatedAt);
         return new StatementResult(job.getId(), job.getAccountId(), generatedAt, statement);
     }
 }

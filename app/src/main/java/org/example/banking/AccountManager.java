@@ -450,6 +450,19 @@ public class AccountManager {
             }
         }
 
+        if (rawCreatedAt instanceof Number createdAtNumber) {
+            try {
+                long rawEpoch = createdAtNumber.longValue();
+                // Support both epoch-seconds and epoch-millis values from SQLite drivers.
+                if (Math.abs(rawEpoch) >= 1_000_000_000_000L) {
+                    return Instant.ofEpochMilli(rawEpoch);
+                }
+                return Instant.ofEpochSecond(rawEpoch);
+            } catch (DateTimeException e) {
+                throw new BankingError("Invalid created_at numeric timestamp for transaction: " + transactionId);
+            }
+        }
+
         throw new BankingError("Unexpected created_at data type for transaction " + transactionId + ": "
                 + rawCreatedAt.getClass().getSimpleName());
     }
