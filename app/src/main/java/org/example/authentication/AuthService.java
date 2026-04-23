@@ -8,6 +8,7 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.Objects;
 
 import org.example.db.DatabaseManager;
 
@@ -69,6 +70,7 @@ public class AuthService {
      * @throws AuthenticationError 
      */
     public static boolean validateKey(AuthKey key) throws AuthenticationError {
+        Objects.requireNonNull(key, "Key cannot be null");
         // This helps solve  CWE-324: Use of a Key Past its Expiration Date vulnerability by checking if the key
         // has expired before validating preventing the use of expired keys
         if(key.isExpired()){
@@ -94,6 +96,7 @@ public class AuthService {
      * @throws AuthenticationError
      */
     public static void invalidateKey(AuthKey key) throws AuthenticationError {
+        Objects.requireNonNull(key, "Key cannot be null");
         // Remove the token from the database
         initTables();
 

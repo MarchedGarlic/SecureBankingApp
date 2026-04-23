@@ -1,6 +1,7 @@
 package org.example.banking;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 public class BankAccount {
     public enum AccountType { CHECKING, SAVINGS }
@@ -11,10 +12,10 @@ public class BankAccount {
     private BigDecimal balance;
 
     public BankAccount(String id, String ownerId, AccountType accountType, BigDecimal balance) {
-        this.id = id;
-        this.ownerId = ownerId;
-        this.accountType = accountType;
-        this.balance = balance;
+        this.id = Objects.requireNonNull(id, "Id cannot be null");
+        this.ownerId = Objects.requireNonNull(ownerId, "Owner ID cannot be null");
+        this.accountType = Objects.requireNonNull(accountType, "Account type cannot be null");
+        this.balance = Objects.requireNonNull(balance, "Balance cannot be null");
     }
 
     public String getId() { return id; }
