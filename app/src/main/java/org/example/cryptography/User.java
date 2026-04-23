@@ -1,5 +1,7 @@
 package org.example.cryptography;
 
+import java.util.Objects;
+
 public class User {
     private final String id;
     private final String username;
@@ -7,10 +9,10 @@ public class User {
     private final String salt;
 
     public User(String id, String username, String passwordHash, String salt) {
-        this.id = id;
-        this.username = username;
-        this.passwordHash = passwordHash;
-        this.salt = salt;
+        this.id = Objects.requireNonNull(id, "Id cannot be null");
+        this.username = Objects.requireNonNull(username, "Username cannot be null");
+        this.passwordHash = Objects.requireNonNull(passwordHash, "Password hash cannot be null");
+        this.salt = Objects.requireNonNull(salt, "Salt cannot be null");
     }
 
     public String getId() {
@@ -21,7 +23,8 @@ public class User {
         return username;
     }
 
-    public String getPasswordHash() {
+    // CWE-767: keep password hash inaccessible to untrusted public callers.
+    String getPasswordHash() {
         return passwordHash;
     }
 

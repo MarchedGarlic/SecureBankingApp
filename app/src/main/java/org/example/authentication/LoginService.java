@@ -1,9 +1,5 @@
 package org.example.authentication;
 
-import org.example.cryptography.EncryptionError;
-import org.example.cryptography.User;
-import org.example.cryptography.UserManager;
-
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -12,9 +8,14 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.example.cryptography.EncryptionError;
+import org.example.cryptography.User;
+import org.example.cryptography.UserManager;
 
 /**
  * LoginService bridges UserManager (credential verification) and AuthService
@@ -85,22 +86,23 @@ public class LoginService {
         Objects.requireNonNull(username, "Username cannot be null");
         Objects.requireNonNull(password, "Password cannot be null");
         Objects.requireNonNull(sessionLength, "SessionLength cannot be null");
+        String normalizedUsernameKey = normalizeUsernameKey(username);
 
         // Check lockout before touching the DB (fail fast, avoid timing oracle)
-        checkLockout(username);
+        checkLockout(normalizedUsernameKey);
 
         // Verify credentials via UserManager
         User user;
         try {
             user = UserManager.loadUser(username, password);
         } catch (EncryptionError e) {
-            recordFailedAttempt(username);
+            recordFailedAttempt(normalizedUsernameKey);
             // Use a generic message to avoid username enumeration (CWE-204)
             throw new AuthenticationError("Invalid username or password");
         }
 
         // Credentials good - reset any lingering failed-attempt counter
-        failedAttempts.remove(username);
+        failedAttempts.remove(normalizedUsernameKey);
 
         Instant now       = Instant.now();
         Instant expiry    = sessionLength.expiryFrom(now);
@@ -242,8 +244,8 @@ public class LoginService {
     // Lockout helpers
     // -------------------------------------------------------------------------
 
-    private static void checkLockout(String username) throws AuthenticationError {
-        FailedAttemptRecord record = failedAttempts.get(username);
+    private static void checkLockout(String usernameKey) throws AuthenticationError {
+        FailedAttemptRecord record = failedAttempts.get(usernameKey);
         if (record == null) return;
 
         if (record.attempts >= MAX_FAILED_ATTEMPTS) {
@@ -253,13 +255,18 @@ public class LoginService {
                 throw new AuthenticationError(
                         "Account temporarily locked. Try again in " + secsLeft + " seconds.");
             } else {
-                failedAttempts.remove(username);
+                failedAttempts.remove(usernameKey);
             }
         }
     }
 
-    private static void recordFailedAttempt(String username) {
-        failedAttempts.compute(username, (k, existing) -> {
+    // This helps solve CWE-178 by normalizing username case for lockout checks.
+    private static String normalizeUsernameKey(String username) {
+        return username.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static void recordFailedAttempt(String usernameKey) {
+        failedAttempts.compute(usernameKey, (k, existing) -> {
             if (existing == null) return new FailedAttemptRecord(1, Instant.now());
             return new FailedAttemptRecord(existing.attempts + 1, existing.firstFailure);
         });

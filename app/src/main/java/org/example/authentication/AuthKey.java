@@ -1,6 +1,7 @@
 package org.example.authentication;
 
 import java.time.Instant;
+import java.util.Objects;
 
 public class AuthKey {
     private final String token;
@@ -8,9 +9,9 @@ public class AuthKey {
     private final Instant expiresAt;
 
     public AuthKey(String token, Instant createdAt, Instant expiresAt) {
-        this.token = token;
-        this.createdAt = createdAt;
-        this.expiresAt = expiresAt;
+        this.token = Objects.requireNonNull(token, "Token cannot be null");
+        this.createdAt = Objects.requireNonNull(createdAt, "Created at cannot be null");
+        this.expiresAt = Objects.requireNonNull(expiresAt, "Expires at cannot be null");
     }
 
     public String getToken() {
