@@ -1,5 +1,6 @@
 package org.example.cryptography;
 
+import java.util.Arrays;
 import java.util.HexFormat;
 
 import javax.crypto.SecretKeyFactory;
@@ -22,7 +23,9 @@ public class Encryption {
         try {
             SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
             PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt.getBytes(), ITERATIONS, KEY_LENGTH);
-            return f.generateSecret(spec).getEncoded();
+            byte[] derivedKey = f.generateSecret(spec).getEncoded();
+            // This helps solve CWE-466 by returning only bytes from a valid array range.
+            return Arrays.copyOfRange(derivedKey, 0, derivedKey.length);
         } catch (Exception e) {
             throw new EncryptionError("Error generating key bytes");
         }

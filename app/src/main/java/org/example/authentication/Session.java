@@ -1,6 +1,7 @@
 package org.example.authentication;
 
 import java.time.Instant;
+import java.util.Objects;
 
 /**
  * Immutable value object representing an active user session.
@@ -21,12 +22,12 @@ public final class Session {
 
     public Session(String token, String userId, String username,
                    Instant createdAt, Instant expiresAt, Instant hardLimit) {
-        this.token     = token;
-        this.userId    = userId;
-        this.username  = username;
-        this.createdAt = createdAt;
-        this.expiresAt = expiresAt;
-        this.hardLimit = hardLimit;
+        this.token     = Objects.requireNonNull(token, "Token cannot be null");
+        this.userId    = Objects.requireNonNull(userId, "User ID cannot be null");
+        this.username  = Objects.requireNonNull(username, "Username cannot be null");
+        this.createdAt = Objects.requireNonNull(createdAt, "Created at cannot be null");
+        this.expiresAt = Objects.requireNonNull(expiresAt, "Expires at cannot be null");
+        this.hardLimit = Objects.requireNonNull(hardLimit, "Hard limit cannot be null");
     }
 
     // -------------------------------------------------------------------------
