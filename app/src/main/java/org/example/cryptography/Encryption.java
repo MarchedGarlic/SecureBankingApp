@@ -10,6 +10,15 @@ public class Encryption {
     private static final int ITERATIONS = 100000;
     private static final int KEY_LENGTH = 512;
 
+    // [CWE-1241] A single shared SecureRandom instance is initialised once at class-load
+    // time. SecureRandom seeds itself from a cryptographically strong OS entropy source
+    // (e.g. /dev/urandom on Linux, CryptGenRandom on Windows). Re-creating a
+    // new SecureRandom() on every call risks reusing the same seed across close
+    // invocations on some JVMs, making salt values predictable. Using a shared instance
+    // ensures the generator advances its internal state between calls, keeping
+    // all generated values unpredictable to an attacker.
+    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
+
     /**
      * Generates a key byte array from a password and salt using PBKDF2 with HMAC SHA-256.
      * @param password
@@ -32,13 +41,13 @@ public class Encryption {
     }
 
     /**
-     * Generates a random salt string
-     * @return
+     * Generates a random salt string using the shared SECURE_RANDOM instance.
+     * Uses the shared SECURE_RANDOM instance declared above.
+     * @return hex-encoded random salt
      */
     public static String generateSalt() {
-        // Generate a random salt
         byte[] salt = new byte[16];
-        new java.security.SecureRandom().nextBytes(salt);
+        SECURE_RANDOM.nextBytes(salt);
         return HexFormat.of().formatHex(salt);
     }
 
