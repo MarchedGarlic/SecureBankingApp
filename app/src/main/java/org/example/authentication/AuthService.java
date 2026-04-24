@@ -8,6 +8,7 @@ import java.sql.Statement;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.Objects;
 
 import org.example.db.DatabaseManager;
 
@@ -69,6 +70,7 @@ public class AuthService {
      * @throws AuthenticationError 
      */
     public static boolean validateKey(AuthKey key) throws AuthenticationError {
+        Objects.requireNonNull(key, "Key cannot be null");
         // This helps solve  CWE-324: Use of a Key Past its Expiration Date vulnerability by checking if the key
         // has expired before validating preventing the use of expired keys
         if(key.isExpired()){
@@ -94,6 +96,7 @@ public class AuthService {
      * @throws AuthenticationError
      */
     public static void invalidateKey(AuthKey key) throws AuthenticationError {
+        Objects.requireNonNull(key, "Key cannot be null");
         // Remove the token from the database
         initTables();
 
@@ -125,11 +128,16 @@ public class AuthService {
 
     private AuthService() {}
 
-    public static void main(String[] args) throws AuthenticationError {
-        AuthKey key = generateKey();
-        System.out.println("Generated key: " + key.getToken());
-        System.out.println("Is valid: " + validateKey(key));
-        invalidateKey(key);
-        System.out.println("Is valid after invalidation: " + validateKey(key));
+    public static void main(String[] args) {
+        // CWE-431: handle failures locally instead of propagating from entrypoint.
+        try {
+            AuthKey key = generateKey();
+            System.out.println("Generated key: " + key.getToken());
+            System.out.println("Is valid: " + validateKey(key));
+            invalidateKey(key);
+            System.out.println("Is valid after invalidation: " + validateKey(key));
+        } catch (AuthenticationError | SecurityException e) {
+            System.err.println("Authentication flow failed: " + e.getMessage());
+        }
     }
 }

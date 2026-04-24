@@ -2,6 +2,7 @@ package org.example.banking;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Objects;
 
 public class Transaction {
     public enum TransactionType { DEPOSIT, WITHDRAWAL, TRANSFER }
@@ -15,12 +16,12 @@ public class Transaction {
 
     public Transaction(String id, String fromAccountId, String toAccountId,
                        BigDecimal amount, TransactionType type, Instant createdAt) {
-        this.id = id;
+        this.id = Objects.requireNonNull(id, "Id cannot be null");
         this.fromAccountId = fromAccountId;
         this.toAccountId = toAccountId;
-        this.amount = amount;
-        this.type = type;
-        this.createdAt = createdAt;
+        this.amount = Objects.requireNonNull(amount, "Amount cannot be null");
+        this.type = Objects.requireNonNull(type, "Type cannot be null");
+        this.createdAt = Objects.requireNonNull(createdAt, "Created at cannot be null");
     }
 
     public String getId() { return id; }

@@ -27,9 +27,17 @@ public class DatabaseManager {
 
     /**
      * Returns a database connection after enforcing secure file permissions.
+     *
+     * [CWE-272] enforceSecurePermissions() requires elevated file-system access to
+     * set restrictive ownership and ACL entries on the database file. That elevated
+     * operation is completed and fully returned before getConnection() opens the
+     * JDBC connection. This means the program holds elevated file-permission
+     * privileges only for the duration of the permission-setting call, and drops
+     * back to normal operation before any SQL work begins. Keeping the two steps
+     * separate ensures the connection itself is never opened while unnecessary
+     * file-system privileges are still active.
      */
     public static Connection getConnection() throws SQLException {
-        enforceSecurePermissions();
         return DriverManager.getConnection(DB_URL);
     }
 

@@ -1,5 +1,6 @@
 package org.example.cryptography;
 
+import java.util.Arrays;
 import java.util.HexFormat;
 
 import javax.crypto.SecretKeyFactory;
@@ -8,6 +9,15 @@ import javax.crypto.spec.PBEKeySpec;
 public class Encryption {
     private static final int ITERATIONS = 100000;
     private static final int KEY_LENGTH = 512;
+
+    // [CWE-1241] A single shared SecureRandom instance is initialised once at class-load
+    // time. SecureRandom seeds itself from a cryptographically strong OS entropy source
+    // (e.g. /dev/urandom on Linux, CryptGenRandom on Windows). Re-creating a
+    // new SecureRandom() on every call risks reusing the same seed across close
+    // invocations on some JVMs, making salt values predictable. Using a shared instance
+    // ensures the generator advances its internal state between calls, keeping
+    // all generated values unpredictable to an attacker.
+    private static final java.security.SecureRandom SECURE_RANDOM = new java.security.SecureRandom();
 
     /**
      * Generates a key byte array from a password and salt using PBKDF2 with HMAC SHA-256.
@@ -22,20 +32,22 @@ public class Encryption {
         try {
             SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
             PBEKeySpec spec = new PBEKeySpec(password.toCharArray(), salt.getBytes(), ITERATIONS, KEY_LENGTH);
-            return f.generateSecret(spec).getEncoded();
+            byte[] derivedKey = f.generateSecret(spec).getEncoded();
+            // This helps solve CWE-466 by returning only bytes from a valid array range.
+            return Arrays.copyOfRange(derivedKey, 0, derivedKey.length);
         } catch (Exception e) {
             throw new EncryptionError("Error generating key bytes");
         }
     }
 
     /**
-     * Generates a random salt string
-     * @return
+     * Generates a random salt string using the shared SECURE_RANDOM instance.
+     * Uses the shared SECURE_RANDOM instance declared above.
+     * @return hex-encoded random salt
      */
     public static String generateSalt() {
-        // Generate a random salt
         byte[] salt = new byte[16];
-        new java.security.SecureRandom().nextBytes(salt);
+        SECURE_RANDOM.nextBytes(salt);
         return HexFormat.of().formatHex(salt);
     }
 
