@@ -17,11 +17,13 @@ dependencies {
     implementation(libs.guava)
     implementation("org.xerial:sqlite-jdbc:3.44.0.0")
     implementation("org.slf4j:slf4j-api:1.7.36")
+    implementation("ch.qos.logback:logback-classic:1.4.12")
 }
 
 application {
     // Define the main class for the application.
     mainClass = "org.example.App"
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
 extensions.configure<JavaPluginExtension> {

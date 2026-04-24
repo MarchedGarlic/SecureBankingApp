@@ -1,5 +1,9 @@
 package org.example;
 
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Scanner;
+
 import org.example.authentication.AuthenticationError;
 import org.example.authentication.LoginService;
 import org.example.authentication.LoginService.SessionLength;
@@ -126,10 +130,22 @@ public class App {
         }
 
         try {
-            UserManager.newUser(username, password);
-            System.out.println("  Account created successfully! You can now log in.\n");
+            // Create the user
+            org.example.cryptography.User user = UserManager.newUser(username, password);
+            System.out.println("  Account created successfully!");
+            
+            // Auto-create checking and savings accounts
+            System.out.println("  Creating checking account...");
+            AccountManager.openAccount(user.getId(), BankAccount.AccountType.CHECKING);
+            
+            System.out.println("  Creating savings account...");
+            AccountManager.openAccount(user.getId(), BankAccount.AccountType.SAVINGS);
+            
+            System.out.println("  You can now log in with your new accounts.\n");
         } catch (EncryptionError e) {
             System.out.println("  Error creating account: " + e.getMessage() + "\n");
+        } catch (BankingError e) {
+            System.out.println("  Account created but error setting up banking: " + e.getMessage() + "\n");
         }
     }
 
@@ -501,4 +517,5 @@ public class App {
         }
         return scanner.nextLine().trim();
     }
+
 }
