@@ -1,5 +1,6 @@
 # Secure banking app
-Top recommendation: A simple banking/finance app
+.\gradlew build
+java -jar app\build\libs\app-all.jar
 
 1. User accounts with sessions (session expiration, privilege escalation)
 2. Password storage (weak hashing, weak encoding, insufficient entropy)
