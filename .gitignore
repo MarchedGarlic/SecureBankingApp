@@ -9,3 +9,6 @@ bin
 .kotlin
 
 *.db
+
+# Ignore vscode configs
+.vscode
